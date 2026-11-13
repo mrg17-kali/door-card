@@ -43,7 +43,7 @@ q.focus();
 </script></body></html>`;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (!env.SLUG) return new Response("Not set up", { status: 500 });
     const base = "/" + env.SLUG;
@@ -56,14 +56,32 @@ export default {
       try { q = String((await request.json()).q || "").slice(0, 1000); } catch (e) {}
       if (!q) return Response.json({ error: "empty question" }, { status: 400 });
       if (!env.ANTHROPIC_API_KEY) return Response.json({ error: "key not set yet" }, { status: 500 });
+      const brief = env.KV ? ((await env.KV.get("brief")) || "") : "";
+      const system = SYSTEM + (brief ? "\n\nBackground on the wearer, Michael. Use it only when it helps answer:\n" + brief : "");
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: MODEL, max_tokens: 300, system: SYSTEM, messages: [{ role: "user", content: q }] })
+        body: JSON.stringify({ model: MODEL, max_tokens: 300, system, messages: [{ role: "user", content: q }] })
       });
       const d = await r.json();
       if (!r.ok) return Response.json({ error: (d.error && d.error.message) || ("API " + r.status) }, { status: 502 });
-      return Response.json({ a: (d.content || []).map(c => c.text || "").join("").trim() });
+      const a = (d.content || []).map(c => c.text || "").join("").trim();
+      if (env.KV) ctx.waitUntil(env.KV.put("log:" + new Date().toISOString(), JSON.stringify({ q, a }), { expirationTtl: 60 * 60 * 24 * 45 }));
+      return Response.json({ a });
+    }
+    if (url.pathname === base + "/brief" && env.KV) {
+      if (request.method === "PUT") { await env.KV.put("brief", (await request.text()).slice(0, 6000)); return Response.json({ ok: true }); }
+      if (request.method === "GET") return new Response((await env.KV.get("brief")) || "", { headers: { "content-type": "text/plain; charset=utf-8" } });
+    }
+    if (url.pathname === base + "/log" && request.method === "GET" && env.KV) {
+      const after = url.searchParams.get("after") || "";
+      const list = await env.KV.list({ prefix: "log:" });
+      const out = [];
+      for (const k of list.keys) {
+        const t = k.name.slice(4);
+        if (t > after) { const v = await env.KV.get(k.name); if (v) out.push({ t, ...JSON.parse(v) }); }
+      }
+      return Response.json(out);
     }
     return new Response("Not found", { status: 404 });
   }
