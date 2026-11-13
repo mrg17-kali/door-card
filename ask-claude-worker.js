@@ -1,6 +1,6 @@
 const MODEL = "claude-haiku-4-5";
 const DEEP_MODELS = ["claude-opus-5-5", "claude-opus-4-5", "claude-sonnet-4-5"];
-const SYSTEM = "You are answering on a tiny heads-up display in smart glasses. Reply in plain text, no markdown, 45 words or fewer unless asked for more. Lead with the answer. You can search the web: use it for current facts, prices, news, businesses and research, then give the short answer. Private records (money, health, family, legal, job applications) are kept off the glasses on purpose; if asked for those or for a full sweep, say so in one line and tell him to start his request with the word task so his agents on the Mac handle it.";
+const SYSTEM = "You are answering on a tiny heads-up display in smart glasses. Reply in plain text, no markdown, 45 words or fewer unless asked for more. Lead with the answer. You can search the web: use it for current facts, prices, news, businesses and research, then give the short answer. You cannot see his email, calendar, school portal, files or any private account or record from here, but his cloud agent can. So if answering needs any of those, or needs a full sweep, do not explain and do not refuse: reply with exactly ROUTE_TASK and nothing else, and the request is handed to that agent automatically.";
 const PAGE = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -37,7 +37,7 @@ input:focus,button:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgb
   <div class="top"><div class="mark" id="mark"><i></i>Claude</div><div class="echo" id="echo" hidden></div><button id="res" type="button" hidden></button></div>
   <div class="mid" id="home">
     <h1>Ask anything.</h1>
-    <div class="sub">Say think for a deeper answer. Say task for your agent.</div>
+    <div class="sub">Just ask. Say think for a deeper answer.</div>
     <div class="chips"><button type="button" data-q="What is my next step?">Next step</button><button type="button" data-q="What is my opening line at the door?">Door opener</button><button type="button" data-q="Think: based on everything you know about me and today, what is the single most valuable thing I should do next, and why?">Think</button></div>
   </div>
   <div class="mid" id="busy" hidden><div class="pulse"></div><h1 id="busyt">Thinking</h1><div class="sub" id="busyq"></div></div>
@@ -82,7 +82,7 @@ async function send(text){
   try{
     const r=await fetch("ask",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({q:text,h:hist})});
     const d=await r.json(); out=d.a||("Problem: "+(d.error||r.status));
-    if(d.a&&!isTask){ hist.push({q:text,a:d.a}); hist=hist.slice(-3); last=Date.now(); }
+    if(d.a&&!isTask&&!d.routed){ hist.push({q:text,a:d.a}); hist=hist.slice(-3); last=Date.now(); }
   }catch(e){ out="Could not reach Claude. Check the connection and try again."; }
   busy=false; answer(text,out);
 }
@@ -159,7 +159,14 @@ export default {
       }
       const d = await r.json();
       if (!r.ok) return Response.json({ error: (d.error && d.error.message) || ("API " + r.status) }, { status: 502 });
-      const a = (d.content || []).map(c => c.text || "").join("").trim();
+      let a = (d.content || []).map(c => c.text || "").join("").trim();
+      if (!img && env.KV && a.includes("ROUTE_TASK")) {
+        const t = new Date().toISOString();
+        await env.KV.put("task:" + t, q, { expirationTtl: 60 * 60 * 24 * 45 });
+        a = "On it. Your agent is checking that for you. The answer will be under results on the home screen within the hour.";
+        ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, task: true }), { expirationTtl: 60 * 60 * 24 * 45 }));
+        return Response.json({ a, routed: true });
+      }
       if (env.KV) {
         const t = new Date().toISOString();
         ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, photo: !!img }), { expirationTtl: 60 * 60 * 24 * 45 }));
