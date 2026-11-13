@@ -81,12 +81,12 @@ function draw(){
   if(isCard){
     $("big").textContent=pg.big||""; $("big").hidden=!pg.big; $("hd").textContent=pg.h;
     $("pts").innerHTML=(pg.p||[]).map((t,i)=>"<li><i>"+(i+1)+"</i><span>"+esc(t)+"</span></li>").join(""); $("pts").hidden=!(pg.p&&pg.p.length);
-    fitCard();
   } else ans.textContent=pg||"";
   const many=pages.length>1;
   $("dots").innerHTML=many?pages.map((_,i)=>"<b"+(i===pi?" class=on":"")+"></b>").join(""):"";
   $("prev").hidden=!many||pi===0; $("next").hidden=!many||pi===pages.length-1;
   $("next").textContent=(isCard&&many)?"More":"Next";
+  if(isCard) fitCard();
   (!$("next").hidden?$("next"):q).focus();
 }
 function answer(question,text,v){
@@ -187,7 +187,7 @@ export default {
       }
       const d = await r.json();
       if (!r.ok) return Response.json({ error: (d.error && d.error.message) || ("API " + r.status) }, { status: 502 });
-      let a = (d.content || []).map(c => c.text || "").join("").trim();
+      let a = (d.content || []).map(c => c.text || "").join("").replace(/<\/?cite[^>]*>/g, "").trim();
       if (!img && env.KV && a.includes("ROUTE_TASK")) {
         const t = new Date().toISOString();
         await env.KV.put("task:" + t, q, { expirationTtl: 60 * 60 * 24 * 45 });
