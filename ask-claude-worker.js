@@ -169,6 +169,12 @@ export default {
       let img = "";
       try { img = String(body.img || ""); } catch (e) {}
       if (img.length > 2500000) return Response.json({ error: "photo too large" }, { status: 400 });
+      const mode = String(body.mode || "").toLowerCase();
+      const game = mode === "chess" || mode === "checkers";
+      if (img && !q) {
+        if (game) q = "This photo is a " + mode + " board seen from my seat at the table" + (body.side ? "; I am playing " + String(body.side).slice(0, 12) : "") + ". Read the position square by square, carefully. Then give my best move. In the card: big is the move in short notation, h is the move in plain words such as Knight to f3, p is one or two short reasons. If you cannot read the board with confidence, say exactly that in h and tell me what to adjust (closer, less glare, whole board in view) instead of guessing.";
+        else q = "Tell me the single most useful thing about what I am looking at right now. If there is a question, problem, error message or instruction in view, answer or explain it.";
+      }
       if (!q) return Response.json({ error: "empty question" }, { status: 400 });
       if (!env.ANTHROPIC_API_KEY) return Response.json({ error: "key not set yet" }, { status: 500 });
       if (!img && env.KV && /^\s*(task|sweep|full sweep|run a sweep|run a full sweep)\b/i.test(q)) {
@@ -181,7 +187,7 @@ export default {
       const brief = env.KV ? ((await env.KV.get("brief")) || "") : "";
       const now = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
       const system = SYSTEM + " Right now it is " + now + " Pacific time; use that for today, tonight and tomorrow." + (brief ? "\n\nBackground on the wearer, Michael. Use it only when it helps answer:\n" + brief : "");
-      const deep = !img && (body.deep === true || /^\s*(think|deep|research|plan)\b/i.test(q));
+      const deep = game || !img && (body.deep === true || /^\s*(think|deep|research|plan)\b/i.test(q));
       const hist = Array.isArray(body.h) ? body.h.slice(-3) : [];
       const messages = [];
       for (const x of hist) { if (x && x.q && x.a) { messages.push({ role: "user", content: String(x.q).slice(0, 1000) }); messages.push({ role: "assistant", content: String(x.a).slice(0, 2000) }); } }
@@ -194,8 +200,8 @@ export default {
       });
       let used = MODEL, r;
       if (deep) {
-        for (const m of DEEP_MODELS) { r = await call(m, true); used = m; if (r.ok || (r.status !== 404 && r.status !== 400)) break; }
-        if (!r.ok) { r = await call(MODEL, true); used = MODEL; }
+        for (const m of DEEP_MODELS) { r = await call(m, !img); used = m; if (r.ok || (r.status !== 404 && r.status !== 400)) break; }
+        if (!r.ok) { r = await call(MODEL, !img); used = MODEL; }
       } else {
         r = await call(MODEL, !img);
         if (!r.ok && !img && r.status === 400) r = await call(MODEL, false);
