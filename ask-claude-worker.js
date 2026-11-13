@@ -103,7 +103,8 @@ export default {
         return Response.json({ a });
       }
       const brief = env.KV ? ((await env.KV.get("brief")) || "") : "";
-      const system = SYSTEM + (brief ? "\n\nBackground on the wearer, Michael. Use it only when it helps answer:\n" + brief : "");
+      const now = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
+      const system = SYSTEM + " Right now it is " + now + " Pacific time; use that for today, tonight and tomorrow." + (brief ? "\n\nBackground on the wearer, Michael. Use it only when it helps answer:\n" + brief : "");
       const call = (tools) => fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
