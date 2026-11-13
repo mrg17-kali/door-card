@@ -19,7 +19,8 @@ h1{font-size:2.9rem;font-weight:600;letter-spacing:-.02em;line-height:1.05}
 .sub{font-size:1.2rem;color:#8A9099;margin-top:.5em}
 .chips{display:flex;gap:3%;margin-top:1.6rem}
 #ans{flex:1;min-block-size:0;overflow:hidden;font-size:2rem;line-height:1.28;font-weight:500;letter-spacing:-.01em;margin-top:1.1rem;border-top:1px solid #2A2E35;padding-top:1.1rem}
-.bar{display:flex;gap:3%;align-items:center;flex:none;margin-top:1.1rem}
+.bar{display:flex;gap:3%;align-items:center;flex:none;margin-top:.9rem}
+#nav button{padding:.5em 1.1em}
 .dots{flex:1;display:flex;gap:.5em;align-items:center}
 .dots b{inline-size:.55em;block-size:.55em;border-radius:50%;background:#3A3F47;display:block}
 .dots b.on{background:#E8A07A}
@@ -42,8 +43,8 @@ input:focus,button:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgb
   </div>
   <div class="mid" id="busy" hidden><div class="pulse"></div><h1 id="busyt">Thinking</h1><div class="sub" id="busyq"></div></div>
   <div id="ans" hidden></div>
+  <div class="bar" id="nav" hidden><div class="dots" id="dots"></div><button type="button" id="prev">Back</button><button type="button" id="next">Next</button></div>
   <form class="bar" id="ask"><input id="q" type="text" placeholder="Your question" autocomplete="off"><button class="pri" id="go" type="submit">Ask</button></form>
-  <div class="bar" id="nav" hidden><div class="dots" id="dots"></div><button type="button" id="prev">Back</button><button type="button" id="next">Next</button><button class="pri" type="button" id="again">New</button></div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
@@ -51,7 +52,8 @@ const q=$("q"),ans=$("ans");
 let busy=false,pages=[],pi=0,hist=[],last=0;
 function show(s){
   $("home").hidden=s!=="home"; $("busy").hidden=s!=="busy"; ans.hidden=s!=="ans";
-  $("ask").hidden=s!=="home"; $("nav").hidden=s!=="ans";
+  $("ask").hidden=s==="busy"; if(s!=="ans") $("nav").hidden=true;
+  q.placeholder=s==="ans"?"Ask a follow-up":"Your question";
   $("mark").hidden=s==="ans"; $("echo").hidden=s!=="ans"; if(s!=="home") $("res").hidden=true;
 }
 function paginate(text){
@@ -66,10 +68,13 @@ function draw(){
   const many=pages.length>1;
   $("dots").innerHTML=many?pages.map((_,i)=>"<b"+(i===pi?" class=on":"")+"></b>").join(""):"";
   $("prev").hidden=!many||pi===0; $("next").hidden=!many||pi===pages.length-1;
-  (!$("next").hidden?$("next"):$("again")).focus();
+  (!$("next").hidden?$("next"):q).focus();
 }
 function answer(question,text){
-  $("echo").textContent=question; show("ans"); pages=paginate(text); pi=0; draw();
+  $("echo").textContent=question; q.value=""; show("ans");
+  $("nav").hidden=true; pages=paginate(text);
+  if(pages.length>1){ $("nav").hidden=false; pages=paginate(text); }
+  pi=0; draw();
   try{ if(!history.state||history.state.s!=="ans") history.pushState({s:"ans"},""); }catch(e){}
 }
 function home(){ show("home"); q.value=""; q.focus(); checkResults(); }
@@ -91,7 +96,6 @@ q.addEventListener("change",()=>{const t=q.value.trim(); if(t) send(t);});
 document.querySelectorAll(".chips button").forEach(b=>b.addEventListener("click",()=>send(b.dataset.q)));
 $("next").addEventListener("click",()=>{ if(pi<pages.length-1){pi++;draw();} });
 $("prev").addEventListener("click",()=>{ if(pi>0){pi--;draw();} });
-$("again").addEventListener("click",()=>{ try{ if(history.state&&history.state.s==="ans"){ history.back(); return; } }catch(e){} home(); });
 window.addEventListener("popstate",()=>{ if(!busy) home(); });
 let pending=[];
 async function checkResults(){
@@ -132,7 +136,7 @@ export default {
         const t = new Date().toISOString();
         await env.KV.put("task:" + t, q, { expirationTtl: 60 * 60 * 24 * 45 });
         const a = "Sent to your agent. The answer shows up here within the hour. Look for the results button on the home screen.";
-        ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, task: true }), { expirationTtl: 60 * 60 * 24 * 45 }));
+        ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, task: true, src: "meta-glasses" }), { expirationTtl: 60 * 60 * 24 * 45 }));
         return Response.json({ a });
       }
       const brief = env.KV ? ((await env.KV.get("brief")) || "") : "";
@@ -164,12 +168,12 @@ export default {
         const t = new Date().toISOString();
         await env.KV.put("task:" + t, q, { expirationTtl: 60 * 60 * 24 * 45 });
         a = "On it. Your agent is checking that for you. The answer will be under results on the home screen within the hour.";
-        ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, task: true }), { expirationTtl: 60 * 60 * 24 * 45 }));
+        ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, task: true, src: "meta-glasses" }), { expirationTtl: 60 * 60 * 24 * 45 }));
         return Response.json({ a, routed: true });
       }
       if (env.KV) {
         const t = new Date().toISOString();
-        ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, photo: !!img }), { expirationTtl: 60 * 60 * 24 * 45 }));
+        ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, photo: !!img, src: "meta-glasses", model: used }), { expirationTtl: 60 * 60 * 24 * 45 }));
         if (img) ctx.waitUntil(env.KV.put("photo:" + t, img, { expirationTtl: 60 * 60 * 24 * 45 }));
       }
       return Response.json({ a, m: used });
