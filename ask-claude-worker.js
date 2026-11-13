@@ -1,4 +1,5 @@
 const MODEL = "claude-haiku-4-5";
+const DEEP_MODELS = ["claude-opus-5-5", "claude-opus-4-5", "claude-sonnet-4-5"];
 const SYSTEM = "You are answering on a tiny heads-up display in smart glasses. Reply in plain text, no markdown, 45 words or fewer unless asked for more. Lead with the answer. You can search the web: use it for current facts, prices, news, businesses and research, then give the short answer. Private records (money, health, family, legal, job applications) are kept off the glasses on purpose; if asked for those or for a full sweep, say so in one line and tell him to start his request with the word task so his agents on the Mac handle it.";
 const PAGE = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -36,8 +37,8 @@ input:focus,button:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgb
   <div class="top"><div class="mark" id="mark"><i></i>Claude</div><div class="echo" id="echo" hidden></div><button id="res" type="button" hidden></button></div>
   <div class="mid" id="home">
     <h1>Ask anything.</h1>
-    <div class="sub">Speak or write. Answers appear here.</div>
-    <div class="chips"><button type="button" data-q="What is my next step?">Next step</button><button type="button" data-q="What is my opening line at the door?">Door opener</button><button type="button" data-q="What is the weather tomorrow where I live?">Weather</button></div>
+    <div class="sub">Say think for a deeper answer. Say task for your agent.</div>
+    <div class="chips"><button type="button" data-q="What is my next step?">Next step</button><button type="button" data-q="What is my opening line at the door?">Door opener</button><button type="button" data-q="Think: based on everything you know about me and today, what is the single most valuable thing I should do next, and why?">Think</button></div>
   </div>
   <div class="mid" id="busy" hidden><div class="pulse"></div><h1 id="busyt">Thinking</h1><div class="sub" id="busyq"></div></div>
   <div id="ans" hidden></div>
@@ -47,7 +48,7 @@ input:focus,button:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgb
 <script>
 const $=id=>document.getElementById(id);
 const q=$("q"),ans=$("ans");
-let busy=false,pages=[],pi=0;
+let busy=false,pages=[],pi=0,hist=[],last=0;
 function show(s){
   $("home").hidden=s!=="home"; $("busy").hidden=s!=="busy"; ans.hidden=s!=="ans";
   $("ask").hidden=s!=="home"; $("nav").hidden=s!=="ans";
@@ -74,11 +75,14 @@ function answer(question,text){
 function home(){ show("home"); q.value=""; q.focus(); checkResults(); }
 async function send(text){
   if(busy) return; busy=true;
-  $("busyt").textContent=/^\\s*(task|sweep|full sweep|run a)/i.test(text)?"Sending":"Thinking"; $("busyq").textContent=text; show("busy");
+  const isTask=/^\\s*(task|sweep|full sweep|run a)/i.test(text), isDeep=/^\\s*(think|deep|research|plan)\\b/i.test(text);
+  if(Date.now()-last>600000) hist=[];
+  $("busyt").textContent=isTask?"Sending":(isDeep?"Thinking deeper":"Thinking"); $("busyq").textContent=text; show("busy");
   let out;
   try{
-    const r=await fetch("ask",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({q:text})});
+    const r=await fetch("ask",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({q:text,h:hist})});
     const d=await r.json(); out=d.a||("Problem: "+(d.error||r.status));
+    if(d.a&&!isTask){ hist.push({q:text,a:d.a}); hist=hist.slice(-3); last=Date.now(); }
   }catch(e){ out="Could not reach Claude. Check the connection and try again."; }
   busy=false; answer(text,out);
 }
@@ -134,13 +138,25 @@ export default {
       const brief = env.KV ? ((await env.KV.get("brief")) || "") : "";
       const now = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
       const system = SYSTEM + " Right now it is " + now + " Pacific time; use that for today, tonight and tomorrow." + (brief ? "\n\nBackground on the wearer, Michael. Use it only when it helps answer:\n" + brief : "");
-      const call = (tools) => fetch("https://api.anthropic.com/v1/messages", {
+      const deep = !img && (body.deep === true || /^\s*(think|deep|research|plan)\b/i.test(q));
+      const hist = Array.isArray(body.h) ? body.h.slice(-3) : [];
+      const messages = [];
+      for (const x of hist) { if (x && x.q && x.a) { messages.push({ role: "user", content: String(x.q).slice(0, 1000) }); messages.push({ role: "assistant", content: String(x.a).slice(0, 2000) }); } }
+      messages.push({ role: "user", content: img ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: q }] : q });
+      const sys2 = deep ? system + " DEEP MODE: think it through carefully, search the web as much as needed, and give a complete answer in up to 130 words: the recommendation first, then the 2 or 3 reasons or steps that matter." : system;
+      const call = (model, tools) => fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: MODEL, max_tokens: 600, system, ...(tools ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }] } : {}), messages: [{ role: "user", content: img ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: q }] : q }] })
+        body: JSON.stringify({ model, max_tokens: deep ? 1500 : 600, system: sys2, ...(tools ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: deep ? 6 : 3 }] } : {}), messages })
       });
-      let r = await call(!img);
-      if (!r.ok && !img && r.status === 400) r = await call(false);
+      let used = MODEL, r;
+      if (deep) {
+        for (const m of DEEP_MODELS) { r = await call(m, true); used = m; if (r.ok || (r.status !== 404 && r.status !== 400)) break; }
+        if (!r.ok) { r = await call(MODEL, true); used = MODEL; }
+      } else {
+        r = await call(MODEL, !img);
+        if (!r.ok && !img && r.status === 400) r = await call(MODEL, false);
+      }
       const d = await r.json();
       if (!r.ok) return Response.json({ error: (d.error && d.error.message) || ("API " + r.status) }, { status: 502 });
       const a = (d.content || []).map(c => c.text || "").join("").trim();
@@ -149,7 +165,7 @@ export default {
         ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, photo: !!img }), { expirationTtl: 60 * 60 * 24 * 45 }));
         if (img) ctx.waitUntil(env.KV.put("photo:" + t, img, { expirationTtl: 60 * 60 * 24 * 45 }));
       }
-      return Response.json({ a });
+      return Response.json({ a, m: used });
     }
     if (url.pathname === base + "/brief" && env.KV) {
       if (request.method === "PUT") { await env.KV.put("brief", (await request.text()).slice(0, 14000)); return Response.json({ ok: true }); }
