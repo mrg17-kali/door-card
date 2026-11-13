@@ -13,6 +13,8 @@ html,body{inline-size:100%;block-size:100%;background:#000;color:#fff;font-famil
 .top{display:flex;align-items:center;justify-content:space-between;block-size:2.2rem;flex:none}
 .mark{display:flex;align-items:center;gap:.55em;font-size:1rem;letter-spacing:.22em;text-transform:uppercase;color:#C9CDD3;font-weight:600}
 .mark i{inline-size:.6em;block-size:.6em;border-radius:50%;background:#E8A07A;display:block}
+.tr{display:flex;gap:.6em;align-items:center}
+.tr button{font-size:.95rem;padding:.5em .95em}
 .echo{font-size:1.05rem;color:#8A9099;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-inline-size:100%}
 .mid{flex:1;min-block-size:0;display:flex;flex-direction:column;justify-content:center}
 h1{font-size:2.9rem;font-weight:600;letter-spacing:-.02em;line-height:1.05}
@@ -41,7 +43,7 @@ input:focus,button:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgb
 [hidden]{display:none!important}
 </style></head><body>
 <div id="app">
-  <div class="top"><div class="mark" id="mark"><i></i>Claude</div><div class="echo" id="echo" hidden></div><button id="res" type="button" hidden></button></div>
+  <div class="top"><div class="mark" id="mark"><i></i>Claude</div><div class="echo" id="echo" hidden></div><div class="tr"><button id="res" type="button" hidden></button><button id="snd" type="button">Voice on</button></div></div>
   <div class="mid" id="home">
     <h1>Ask anything.</h1>
     <div class="sub">Just ask. Say think for a deeper answer.</div>
@@ -62,7 +64,7 @@ function show(s){
   $("home").hidden=s!=="home"; $("busy").hidden=s!=="busy"; ans.hidden=s!=="ans"; if(s!=="ans") card.hidden=true;
   $("ask").hidden=s==="busy"; if(s!=="ans") $("nav").hidden=true;
   q.placeholder=s==="ans"?"Ask a follow-up":"Your question";
-  $("mark").hidden=s==="ans"; $("echo").hidden=s!=="ans"; if(s!=="home") $("res").hidden=true;
+  $("mark").hidden=s==="ans"; $("echo").hidden=s!=="ans"; if(s!=="home") $("res").hidden=true; $("snd").hidden=s!=="home";
 }
 function paginate(text){
   const words=String(text).replace(/\\s+/g," ").trim().split(" "); const out=[]; let cur=[];
@@ -71,6 +73,16 @@ function paginate(text){
   if(cur.length) out.push(cur.join(" "));
   return out;
 }
+let voice=true; try{ voice=localStorage.getItem("voice")!=="off"; }catch(e){}
+function hush(){ try{ if("speechSynthesis" in window) window.speechSynthesis.cancel(); }catch(e){} }
+function say(t){
+  hush(); if(!voice||!t) return;
+  try{
+    if(!("speechSynthesis" in window)||!("SpeechSynthesisUtterance" in window)) return;
+    const u=new SpeechSynthesisUtterance(String(t).slice(0,600)); u.lang="en-US"; u.rate=1.05; window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+function sndLabel(){ $("snd").textContent=voice?"Voice on":"Voice off"; }
 function fitCard(){
   let k=1; card.style.setProperty("--k",k);
   while(card.scrollHeight>card.clientHeight+1&&k>0.62){ k-=0.06; card.style.setProperty("--k",k); }
@@ -99,11 +111,12 @@ function answer(question,text,v){
     if(pages.length>1){ $("nav").hidden=false; pages=paginate(text); }
   }
   pi=0; draw();
+  say(v&&v.h?[v.big,v.h].filter(Boolean).join(". ")+". "+(v.p||[]).join(". "):text);
   try{ if(!history.state||history.state.s!=="ans") history.pushState({s:"ans"},""); }catch(e){}
 }
-function home(){ show("home"); q.value=""; q.focus(); checkResults(); }
+function home(){ hush(); show("home"); q.value=""; q.focus(); checkResults(); }
 async function send(text){
-  if(busy) return; busy=true;
+  if(busy) return; busy=true; hush();
   const isTask=/^\\s*(task|sweep|full sweep|run a)/i.test(text), isDeep=/^\\s*(think|deep|research|plan)\\b/i.test(text);
   if(Date.now()-last>600000) hist=[];
   $("busyt").textContent=isTask?"Sending":(isDeep?"Thinking deeper":"Thinking"); $("busyq").textContent=text; show("busy");
@@ -121,6 +134,8 @@ document.querySelectorAll(".chips button").forEach(b=>b.addEventListener("click"
 $("next").addEventListener("click",()=>{ if(pi<pages.length-1){pi++;draw();} });
 $("prev").addEventListener("click",()=>{ if(pi>0){pi--;draw();} });
 window.addEventListener("popstate",()=>{ if(!busy) home(); });
+$("snd").addEventListener("click",()=>{ voice=!voice; try{ localStorage.setItem("voice",voice?"on":"off"); }catch(e){} sndLabel(); if(voice) say("Voice is on."); else hush(); });
+sndLabel();
 let pending=[];
 async function checkResults(){
   try{
