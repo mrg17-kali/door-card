@@ -48,7 +48,16 @@ async function look(){
   try{
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw new Error("no camera access in this app");
     out.className="dim"; out.textContent="Opening camera...";
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false});
+    let err;
+    for(const cons of [{video:{facingMode:"environment"},audio:false},{video:true,audio:false}]){
+      try{ stream=await navigator.mediaDevices.getUserMedia(cons); break; }catch(e){ err=e; }
+    }
+    if(!stream){
+      let n="?";
+      try{ n=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput").length; }catch(e){}
+      out.className=""; out.textContent="Meta is not giving this app a camera (cameras offered: "+n+"). "+((err&&err.name)||"");
+      return;
+    }
     v.srcObject=stream; await v.play();
     await new Promise(r=>setTimeout(r,700));
     const w=v.videoWidth||640,h=v.videoHeight||480,k=Math.min(1,1024/Math.max(w,h));
