@@ -406,7 +406,7 @@ export default {
       const brief = env.KV ? ((await env.KV.get("brief")) || "") : "";
       let ocean = "";
       if (!img && /\b(dive|diving|spearfish|spear|freedive|visibility|vis|swell|tide|ocean|surf|cove|water temp)/i.test(q)) {
-        try { const dd = await diveData(env); ocean = "\n\nLive dive report for " + dd.spot + " (rule-based estimates, say est.): " + dd.days.map(x => x.label + ": " + x.verdict + " " + x.score + "/10, vis " + x.vis + ", swell " + x.swell + ", wind " + x.wind + ", " + x.tide + ", window " + (x.win || "none") + ". " + x.why).join(" | "); } catch (e) {}
+        try { const dd = await diveData(env); ocean = "\n\nLive dive report for " + dd.spot + ". When he asks whether he can or should dive, spearfish or get in the water, answer from this report: big is the verdict word for the day he means (GO, MAYBE or NO), h says it plainly, p gives visibility est., swell, and the best window or the better day. Never turn a NO into a yes, do not discuss fishing rules or seasons unless he asks about them, and call the numbers estimates. Report: " + dd.days.map(x => x.label + ": " + x.verdict + " " + x.score + "/10, vis " + x.vis + ", swell " + x.swell + ", wind " + x.wind + ", " + x.tide + ", window " + (x.win || "none") + ". " + x.why).join(" | "); } catch (e) {}
       }
       const now = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
       const system = SYSTEM + " Right now it is " + now + " Pacific time; use that for today, tonight and tomorrow." + ocean + (brief ? "\n\nBackground on the wearer, Michael. Use it only when it helps answer:\n" + brief : "");
