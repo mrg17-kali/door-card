@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="application-name" content="Door Card">
+<title>Door Card</title>
+<style>
+*{box-sizing:border-box}
+html,body{inline-size:100%;block-size:100%;margin:0;background:#000;color:#fff;
+  font-family:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif}
+#app{block-size:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:6%;gap:4%}
+#top{display:flex;justify-content:space-between;align-items:center;font-size:1.05rem;letter-spacing:.04em}
+#label{color:#7CC4FF;font-weight:600;text-transform:uppercase}
+#count{color:#9aa}
+#card{border:2px solid #2E7BD6;border-radius:22px;padding:6%;display:flex;flex-direction:column;
+  justify-content:center;gap:.5em;min-block-size:0;overflow:hidden}
+#head{font-size:2.1rem;font-weight:700;line-height:1.15}
+#sub{font-size:1.45rem;line-height:1.3;color:#D6E6F7}
+#nav{display:flex;gap:4%}
+button{flex:1;font:inherit;font-size:1.2rem;font-weight:600;color:#fff;background:#0B2545;
+  border:2px solid #35506e;border-radius:14px;padding:.55em 0}
+button:focus{outline:none;border-color:#fff;background:#2E7BD6}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top"><span id="label"></span><span id="count"></span></div>
+  <div id="card"><div id="head"></div><div id="sub"></div></div>
+  <div id="nav">
+    <button type="button" id="prev">Back</button>
+    <button type="button" id="next">Next</button>
+  </div>
+</div>
+<script>
+// Edit these cards. Keep each one short enough to read in a glance.
+const CARDS = [
+  {label:"Test",   head:"Door card is live.", sub:"Swipe or pinch Next to step through your pitch."},
+  {label:"Opener", head:"Hi, I'm Michael. I live here in the South Bay.", sub:"Smile. Ask for the owner by name."},
+  {label:"Ask",    head:"Who answers the phone when you're busy or closed?", sub:"Then stop talking. Let them answer."},
+  {label:"Offer",  head:"I set up phone answering that never misses a call.", sub:"It books the job and texts you the details."},
+  {label:"Close",  head:"Can I show you a free demo answering as your business?", sub:"Hand them the card. Get a day and time."}
+];
+let i = 0;
+const $ = id => document.getElementById(id);
+function render(){
+  const c = CARDS[i];
+  $("label").textContent = c.label;
+  $("count").textContent = (i+1) + " / " + CARDS.length;
+  $("head").textContent = c.head;
+  $("sub").textContent = c.sub;
+}
+function go(d){ i = Math.min(CARDS.length-1, Math.max(0, i+d)); render(); }
+$("next").addEventListener("click", () => go(1));
+$("prev").addEventListener("click", () => go(-1));
+render();
+$("next").focus();
+</script>
+</body>
+</html>
