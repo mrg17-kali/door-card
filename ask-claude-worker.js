@@ -1,5 +1,5 @@
 const MODEL = "claude-haiku-4-5";
-const SYSTEM = "You are answering on a tiny heads-up display in smart glasses. Reply in plain text, no markdown, 45 words or fewer unless asked for more. Lead with the answer.";
+const SYSTEM = "You are answering on a tiny heads-up display in smart glasses. Reply in plain text, no markdown, 45 words or fewer unless asked for more. Lead with the answer. You can search the web: use it for current facts, prices, news, businesses and research, then give the short answer. Private records (money, health, family, legal, job applications) are kept off the glasses on purpose; if asked for those or for a full sweep, say so in one line and tell him to start his request with the word task so his agents on the Mac handle it.";
 const PAGE = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -95,13 +95,22 @@ export default {
       if (img.length > 2500000) return Response.json({ error: "photo too large" }, { status: 400 });
       if (!q) return Response.json({ error: "empty question" }, { status: 400 });
       if (!env.ANTHROPIC_API_KEY) return Response.json({ error: "key not set yet" }, { status: 500 });
+      if (!img && env.KV && /^\s*(task|sweep|full sweep|run a sweep|run a full sweep)\b/i.test(q)) {
+        const t = new Date().toISOString();
+        await env.KV.put("task:" + t, q, { expirationTtl: 60 * 60 * 24 * 45 });
+        const a = "Queued for your agents. It runs the next time Claude or Codex is working on your Mac, and the result comes back here.";
+        ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, task: true }), { expirationTtl: 60 * 60 * 24 * 45 }));
+        return Response.json({ a });
+      }
       const brief = env.KV ? ((await env.KV.get("brief")) || "") : "";
       const system = SYSTEM + (brief ? "\n\nBackground on the wearer, Michael. Use it only when it helps answer:\n" + brief : "");
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
+      const call = (tools) => fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: MODEL, max_tokens: 300, system, messages: [{ role: "user", content: img ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: q }] : q }] })
+        body: JSON.stringify({ model: MODEL, max_tokens: 600, system, ...(tools ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }] } : {}), messages: [{ role: "user", content: img ? [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: q }] : q }] })
       });
+      let r = await call(!img);
+      if (!r.ok && !img && r.status === 400) r = await call(false);
       const d = await r.json();
       if (!r.ok) return Response.json({ error: (d.error && d.error.message) || ("API " + r.status) }, { status: 502 });
       const a = (d.content || []).map(c => c.text || "").join("").trim();
@@ -113,13 +122,20 @@ export default {
       return Response.json({ a });
     }
     if (url.pathname === base + "/brief" && env.KV) {
-      if (request.method === "PUT") { await env.KV.put("brief", (await request.text()).slice(0, 6000)); return Response.json({ ok: true }); }
+      if (request.method === "PUT") { await env.KV.put("brief", (await request.text()).slice(0, 14000)); return Response.json({ ok: true }); }
       if (request.method === "GET") return new Response((await env.KV.get("brief")) || "", { headers: { "content-type": "text/plain; charset=utf-8" } });
     }
     if (url.pathname === base + "/photo" && request.method === "GET" && env.KV) {
       const p = await env.KV.get("photo:" + (url.searchParams.get("t") || ""));
       if (!p) return new Response("Not found", { status: 404 });
       return new Response(Uint8Array.from(atob(p), ch => ch.charCodeAt(0)), { headers: { "content-type": "image/jpeg" } });
+    }
+    if (url.pathname === base + "/tasks" && request.method === "GET" && env.KV) {
+      const after = url.searchParams.get("after") || "";
+      const list = await env.KV.list({ prefix: "task:" });
+      const out = [];
+      for (const k of list.keys) { const t = k.name.slice(5); if (t > after) out.push({ t, q: await env.KV.get(k.name) }); }
+      return Response.json(out);
     }
     if (url.pathname === base + "/log" && request.method === "GET" && env.KV) {
       const after = url.searchParams.get("after") || "";
