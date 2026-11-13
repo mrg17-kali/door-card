@@ -6,75 +6,104 @@ const PAGE = `<!DOCTYPE html>
 <meta name="application-name" content="Ask Claude">
 <title>Ask Claude</title>
 <style>
-*{box-sizing:border-box}
-html,body{inline-size:100%;block-size:100%;margin:0;background:#000;color:#fff;font-family:-apple-system,system-ui,Roboto,sans-serif}
-#app{block-size:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:6%;gap:4%}
-#top{font-size:1.05rem;letter-spacing:.04em;color:#F0A070;font-weight:600;text-transform:uppercase}
-#out{border:2px solid #D97757;border-radius:22px;padding:5%;min-block-size:0;overflow-y:auto;font-size:1.5rem;line-height:1.3;white-space:pre-wrap}
-#out.dim{color:#9aa}
-#row{display:flex;gap:3%}
-input{flex:1;min-inline-size:0;font:inherit;font-size:1.15rem;color:#fff;background:#111;border:2px solid #444;border-radius:14px;padding:.5em .7em}
-button{font:inherit;font-size:1.15rem;font-weight:600;color:#fff;background:#3a1f14;border:2px solid #6b4433;border-radius:14px;padding:.5em .7em}
-input:focus,button:focus{outline:none;border-color:#fff}
-button:focus{background:#D97757}
+*{box-sizing:border-box;margin:0}
+html,body{inline-size:100%;block-size:100%;background:#000;color:#fff;font-family:-apple-system,"SF Pro Display",system-ui,Roboto,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+#app{block-size:100%;display:flex;flex-direction:column;padding:7% 7% 6%}
+.top{display:flex;align-items:center;justify-content:space-between;block-size:2.2rem;flex:none}
+.mark{display:flex;align-items:center;gap:.55em;font-size:1rem;letter-spacing:.22em;text-transform:uppercase;color:#C9CDD3;font-weight:600}
+.mark i{inline-size:.6em;block-size:.6em;border-radius:50%;background:#E8A07A;display:block}
+.echo{font-size:1.05rem;color:#8A9099;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-inline-size:100%}
+.mid{flex:1;min-block-size:0;display:flex;flex-direction:column;justify-content:center}
+h1{font-size:2.9rem;font-weight:600;letter-spacing:-.02em;line-height:1.05}
+.sub{font-size:1.2rem;color:#8A9099;margin-top:.5em}
+.chips{display:flex;gap:3%;margin-top:1.6rem}
+#ans{flex:1;min-block-size:0;overflow:hidden;font-size:2rem;line-height:1.28;font-weight:500;letter-spacing:-.01em;margin-top:1.1rem;border-top:1px solid #2A2E35;padding-top:1.1rem}
+.bar{display:flex;gap:3%;align-items:center;flex:none;margin-top:1.1rem}
+.dots{flex:1;display:flex;gap:.5em;align-items:center}
+.dots b{inline-size:.55em;block-size:.55em;border-radius:50%;background:#3A3F47;display:block}
+.dots b.on{background:#E8A07A}
+input{flex:1;min-inline-size:0;font:inherit;font-size:1.25rem;color:#fff;background:#0D0F12;border:1.5px solid #2F343C;border-radius:999px;padding:.7em 1.1em}
+input::placeholder{color:#6B717A}
+button{font:inherit;font-size:1.15rem;font-weight:600;color:#fff;background:#14171B;border:1.5px solid #2F343C;border-radius:999px;padding:.7em 1.15em;white-space:nowrap}
+.chips button{flex:1;font-size:1.05rem;padding:.75em .4em;color:#D7DADF}
+button.pri{background:#E8A07A;border-color:#E8A07A;color:#17110D}
+input:focus,button:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.28)}
+.pulse{inline-size:1.1rem;block-size:1.1rem;border-radius:50%;background:#E8A07A;animation:p 1.1s ease-in-out infinite;margin-bottom:1.4rem}
+@keyframes p{0%,100%{transform:scale(.6);opacity:.45}50%{transform:scale(1.25);opacity:1}}
+[hidden]{display:none!important}
 </style></head><body>
 <div id="app">
-<div id="top">Ask Claude</div>
-<div id="out" class="dim" tabindex="0">Select the box, say or write your question, then Ask.</div>
-<form id="row"><input id="q" type="text" placeholder="Your question" autocomplete="off"><button id="go" type="submit">Ask</button><button id="look" type="button">Look</button></form>
-<video id="v" playsinline muted style="display:none"></video><canvas id="c" style="display:none"></canvas>
+  <div class="top"><div class="mark" id="mark"><i></i>Claude</div><div class="echo" id="echo" hidden></div><button id="res" type="button" hidden></button></div>
+  <div class="mid" id="home">
+    <h1>Ask anything.</h1>
+    <div class="sub">Speak or write. Answers appear here.</div>
+    <div class="chips"><button type="button" data-q="What is my next step?">Next step</button><button type="button" data-q="What is my opening line at the door?">Door opener</button><button type="button" data-q="What is the weather tomorrow where I live?">Weather</button></div>
+  </div>
+  <div class="mid" id="busy" hidden><div class="pulse"></div><h1 id="busyt">Thinking</h1><div class="sub" id="busyq"></div></div>
+  <div id="ans" hidden></div>
+  <form class="bar" id="ask"><input id="q" type="text" placeholder="Your question" autocomplete="off"><button class="pri" id="go" type="submit">Ask</button></form>
+  <div class="bar" id="nav" hidden><div class="dots" id="dots"></div><button type="button" id="prev">Back</button><button type="button" id="next">Next</button><button class="pri" type="button" id="again">New</button></div>
 </div>
 <script>
-const out=document.getElementById("out"),q=document.getElementById("q");
-let busy=false;
-async function send(payload){
-  busy=true; out.className="dim"; out.textContent=payload.img?"Looking...":"Thinking...";
+const $=id=>document.getElementById(id);
+const q=$("q"),ans=$("ans");
+let busy=false,pages=[],pi=0;
+function show(s){
+  $("home").hidden=s!=="home"; $("busy").hidden=s!=="busy"; ans.hidden=s!=="ans";
+  $("ask").hidden=s!=="home"; $("nav").hidden=s!=="ans";
+  $("mark").hidden=s==="ans"; $("echo").hidden=s!=="ans"; if(s!=="home") $("res").hidden=true;
+}
+function paginate(text){
+  const words=String(text).replace(/\\s+/g," ").trim().split(" "); const out=[]; let cur=[];
+  for(const w of words){ cur.push(w); ans.textContent=cur.join(" ");
+    if(ans.scrollHeight>ans.clientHeight+1&&cur.length>1){ cur.pop(); out.push(cur.join(" ")); cur=[w]; } }
+  if(cur.length) out.push(cur.join(" "));
+  return out;
+}
+function draw(){
+  ans.textContent=pages[pi]||"";
+  const many=pages.length>1;
+  $("dots").innerHTML=many?pages.map((_,i)=>"<b"+(i===pi?" class=on":"")+"></b>").join(""):"";
+  $("prev").hidden=!many||pi===0; $("next").hidden=!many||pi===pages.length-1;
+  (!$("next").hidden?$("next"):$("again")).focus();
+}
+function answer(question,text){
+  $("echo").textContent=question; show("ans"); pages=paginate(text); pi=0; draw();
+  try{ if(!history.state||history.state.s!=="ans") history.pushState({s:"ans"},""); }catch(e){}
+}
+function home(){ show("home"); q.value=""; q.focus(); checkResults(); }
+async function send(text){
+  if(busy) return; busy=true;
+  $("busyt").textContent=/^\\s*(task|sweep|full sweep|run a)/i.test(text)?"Sending":"Thinking"; $("busyq").textContent=text; show("busy");
+  let out;
   try{
-    const r=await fetch("ask",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
-    const d=await r.json();
-    out.className=""; out.textContent=d.a||("Problem: "+(d.error||r.status));
-    q.value="";
-  }catch(e){ out.className=""; out.textContent="Could not reach Claude. Check the connection."; }
-  busy=false;
+    const r=await fetch("ask",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({q:text})});
+    const d=await r.json(); out=d.a||("Problem: "+(d.error||r.status));
+  }catch(e){ out="Could not reach Claude. Check the connection and try again."; }
+  busy=false; answer(text,out);
 }
-async function ask(){
-  const text=q.value.trim(); if(!text||busy) return;
-  await send({q:text});
-}
-async function look(){
-  if(busy) return;
-  const v=document.getElementById("v"),c=document.getElementById("c");
-  let stream;
+$("ask").addEventListener("submit",e=>{e.preventDefault(); const t=q.value.trim(); if(t) send(t);});
+q.addEventListener("change",()=>{const t=q.value.trim(); if(t) send(t);});
+document.querySelectorAll(".chips button").forEach(b=>b.addEventListener("click",()=>send(b.dataset.q)));
+$("next").addEventListener("click",()=>{ if(pi<pages.length-1){pi++;draw();} });
+$("prev").addEventListener("click",()=>{ if(pi>0){pi--;draw();} });
+$("again").addEventListener("click",()=>{ try{ if(history.state&&history.state.s==="ans"){ history.back(); return; } }catch(e){} home(); });
+window.addEventListener("popstate",()=>{ if(!busy) home(); });
+let pending=[];
+async function checkResults(){
   try{
-    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw new Error("no camera access in this app");
-    out.className="dim"; out.textContent="Opening camera...";
-    let err;
-    for(const cons of [{video:{facingMode:"environment"},audio:false},{video:true,audio:false}]){
-      try{ stream=await navigator.mediaDevices.getUserMedia(cons); break; }catch(e){ err=e; }
-    }
-    if(!stream){
-      let n="?";
-      try{ n=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput").length; }catch(e){}
-      out.className=""; out.textContent="Meta is not giving this app a camera (cameras offered: "+n+"). "+((err&&err.name)||"");
-      return;
-    }
-    v.srcObject=stream; await v.play();
-    await new Promise(r=>setTimeout(r,700));
-    const w=v.videoWidth||640,h=v.videoHeight||480,k=Math.min(1,1024/Math.max(w,h));
-    c.width=Math.round(w*k); c.height=Math.round(h*k);
-    c.getContext("2d").drawImage(v,0,0,c.width,c.height);
-    const img=c.toDataURL("image/jpeg",0.8).split(",")[1];
-    stream.getTracks().forEach(t=>t.stop());
-    await send({q:q.value.trim()||"What am I looking at? Be specific and brief.",img});
-  }catch(e){
-    if(stream) stream.getTracks().forEach(t=>t.stop());
-    out.className=""; out.textContent="Camera not available here: "+(e.name||"")+" "+(e.message||"");
-  }
+    let seen=""; try{ seen=localStorage.getItem("seen")||""; }catch(e){}
+    const r=await fetch("results?after="+encodeURIComponent(seen)); pending=await r.json();
+    const b=$("res"); if(pending.length&&!$("home").hidden){ b.textContent=pending.length+(pending.length>1?" results":" result"); b.hidden=false; } else b.hidden=true;
+  }catch(e){}
 }
-document.getElementById("look").addEventListener("click",look);
-document.getElementById("row").addEventListener("submit",e=>{e.preventDefault();ask();});
-q.addEventListener("change",ask);
-q.focus();
+$("res").addEventListener("click",()=>{
+  if(!pending.length) return; const r=pending[pending.length-1];
+  try{ localStorage.setItem("seen",r.t); }catch(e){}
+  answer(r.q||"Task result",r.a||"");
+});
+try{ history.replaceState({s:"home"},""); }catch(e){}
+home();
 </script></body></html>`;
 
 export default {
@@ -98,7 +127,7 @@ export default {
       if (!img && env.KV && /^\s*(task|sweep|full sweep|run a sweep|run a full sweep)\b/i.test(q)) {
         const t = new Date().toISOString();
         await env.KV.put("task:" + t, q, { expirationTtl: 60 * 60 * 24 * 45 });
-        const a = "Queued for your agents. It runs the next time Claude or Codex is working on your Mac, and the result comes back here.";
+        const a = "Sent to your agent. The answer shows up here within the hour. Look for the results button on the home screen.";
         ctx.waitUntil(env.KV.put("log:" + t, JSON.stringify({ q, a, task: true }), { expirationTtl: 60 * 60 * 24 * 45 }));
         return Response.json({ a });
       }
@@ -130,6 +159,24 @@ export default {
       const p = await env.KV.get("photo:" + (url.searchParams.get("t") || ""));
       if (!p) return new Response("Not found", { status: 404 });
       return new Response(Uint8Array.from(atob(p), ch => ch.charCodeAt(0)), { headers: { "content-type": "image/jpeg" } });
+    }
+    if (url.pathname === base + "/result" && request.method === "POST" && env.KV) {
+      let b = {};
+      try { b = await request.json(); } catch (e) {}
+      const t = String(b.t || ""), a = String(b.a || "").slice(0, 1500);
+      if (!t || !a) return Response.json({ error: "need t and a" }, { status: 400 });
+      const q = (await env.KV.get("task:" + t)) || String(b.q || "Task");
+      const done = new Date().toISOString();
+      await env.KV.put("result:" + done, JSON.stringify({ task: t, q, a }), { expirationTtl: 60 * 60 * 24 * 45 });
+      await env.KV.delete("task:" + t);
+      return Response.json({ ok: true });
+    }
+    if (url.pathname === base + "/results" && request.method === "GET" && env.KV) {
+      const after = url.searchParams.get("after") || "";
+      const list = await env.KV.list({ prefix: "result:" });
+      const out = [];
+      for (const k of list.keys) { const t = k.name.slice(7); if (t > after) { const v = await env.KV.get(k.name); if (v) out.push({ t, ...JSON.parse(v) }); } }
+      return Response.json(out.slice(-10));
     }
     if (url.pathname === base + "/tasks" && request.method === "GET" && env.KV) {
       const after = url.searchParams.get("after") || "";
